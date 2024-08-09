@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Write;
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT, CONTENT_TYPE};
+use serde_json::json;
 
 async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
     let github_token = env::var("GITHUB_TOKEN")?;
@@ -21,7 +22,7 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
 
     let query = format!(
         r#"{{
-            repository(owner: "{}", name: "{}") {{
+            user(login: "{}") {{
                 packages(first: 1, names: "{}") {{
                     nodes {{
                         statistics {{
@@ -31,7 +32,7 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
                 }}
             }}
         }}"#,
-        owner, package, package
+        owner, package
     );
 
     let body = json!({
@@ -51,7 +52,7 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
 
     let data: Value = serde_json::from_str(&response_body)?;
     
-    let downloads = data["data"]["repository"]["packages"]["nodes"][0]["statistics"]["downloadsTotalCount"]
+    let downloads = data["data"]["user"]["packages"]["nodes"][0]["statistics"]["downloadsTotalCount"]
         .as_u64()
         .unwrap_or(0);
 
@@ -116,34 +117,27 @@ fn generate_badge(label: &str, message: &str, color: &str) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
-        eprintln!("Usage: {} <registry> <owner> <repo> [package]", args[0]);
+    if args.len() < 5 {
+        eprintln!("Usage: {} <registry> <owner> <repo> <package>", args[0]);
         std::process::exit(1);
     }
 
     let registry = &args[1];
     let owner = &args[2];
     let repo = &args[3];
-    let package = args.get(4).map(|s| s.as_str()).unwrap_or("");
+    let package = &args[4];
 
-    let (label, count) = match registry.as_str() {
-        "github" => {
-            if package.is_empty() {
-                eprintln!("Package name is required for GitHub Container Registry");
-                std::process::exit(1);
-            }
-            ("GitHub pulls", fetch_github_stats(owner, repo, package).await?)
-        }
-        "dockerhub" => ("Docker pulls", fetch_dockerhub_stats(owner, repo).await?),
-        "npm" => ("NPM downloads", fetch_npm_stats(owner).await?),
+    let downloads = match registry.as_str() {
+        "github" => fetch_github_stats(owner, repo, package).await?,
+        // ... other registry handlers ...
         _ => {
             eprintln!("Unsupported registry: {}", registry);
             std::process::exit(1);
         }
     };
 
-    let badge_svg = generate_badge(label, &count.to_string(), "#007ec6");
-    let filename = format!("badges/{}-{}-{}-pulls.svg", owner, repo, package);
+    let badge_svg = generate_badge("downloads", &downloads.to_string(), "#007ec6");
+    let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package);
     let mut file = File::create(filename)?;
     file.write_all(badge_svg.as_bytes())?;
 
