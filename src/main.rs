@@ -1,12 +1,9 @@
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
-use serde_json::Value;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT, CONTENT_TYPE};
+use serde_json::{json, Value};
 use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
-
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT, CONTENT_TYPE};
-use serde_json::json;
 
 async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
     let github_token = env::var("GITHUB_TOKEN")?;
@@ -129,7 +126,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let downloads = match registry.as_str() {
         "github" => fetch_github_stats(owner, repo, package).await?,
-        // ... other registry handlers ...
+        "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
+        "npm" => fetch_npm_stats(package).await?,
         _ => {
             eprintln!("Unsupported registry: {}", registry);
             std::process::exit(1);
