@@ -19,4 +19,7 @@ pub enum BadgeError {
 
     #[error("No download data available")]
     NoDownloads,
+
+    #[error("Invalid header value: {0}")]
+    InvalidHeader(String),
 }

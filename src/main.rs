@@ -15,7 +15,8 @@ async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeErro
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", github_token))?);
+    headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", github_token))
+        .map_err(|e| BadgeError::InvalidHeader(e.to_string()))?);
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
@@ -178,7 +179,7 @@ async fn main() -> Result<(), BadgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::{mock, server_url};
+    use mockito::mock;
 
     #[tokio::test]
     async fn test_fetch_github_stats_success() {
