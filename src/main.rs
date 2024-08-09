@@ -10,52 +10,14 @@ use std::io::Write;
 #[cfg(test)]
 use mockito;
 
-async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> Result<u64, BadgeError> {
+async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
     #[cfg(not(test))]
     let url = "https://api.github.com/graphql".to_string();
     #[cfg(test)]
     let url = mockito::server_url() + "/graphql";
 
-    let package_query = if let Some(package_name) = package {
-        format!(
-            r#"packages(first: 1, names: "{}") {{
-                nodes {{
-                    name
-                    statistics {{
-                        downloadsTotalCount
-                    }}
-                }}
-            }}"#,
-            package_name
-        )
-    } else {
-        String::new()
-    };
-
-    let query = if !repo.is_empty() {
-        format!(
-            r#"{{ 
-                repository(owner: "{}", name: "{}") {{
-                    {}
-                }}
-            }}"#,
-            owner, repo, package_query
-        )
-    } else {
-        format!(
-            r#"{{ 
-                user(login: "{}") {{
-                    {}
-                }}
-            }}"#,
-            owner, package_query
-        )
-    };
-
-    let body = json!({
-        "query": query
-    });
+    println!("Fetching stats for GitHub package: {}/{}/{}", owner, repo, package);
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
@@ -63,6 +25,26 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
         .map_err(|e| BadgeError::InvalidHeader(e.to_string()))?);
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    let query = format!(
+        r#"{{
+            repository(owner: "{}", name: "{}") {{
+                packages(first: 1, names: "{}") {{
+                    nodes {{
+                        name
+                        statistics {{
+                            downloadsTotalCount
+                        }}
+                    }}
+                }}
+            }}
+        }}"#,
+        owner, repo, package
+    );
+
+    let body = json!({
+        "query": query
+    });
 
     let response = client.post(&url)
         .headers(headers)
@@ -83,20 +65,17 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
     }
 
     let downloads = data["data"]["repository"]["packages"]["nodes"]
-        .get(0)
+        .as_array()
+        .and_then(|nodes| nodes.get(0))
         .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        .or_else(|| {
-            data["data"]["user"]["packages"]["nodes"]
-                .get(0)
-                .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        })
-        .unwrap_or_else(|| {
-            println!("Failed to parse downloads. Full JSON response: {}", data);
-            0
-        });
+        .ok_or_else(|| {
+            println!("No download data found for package: {}/{}/{}", owner, repo, package);
+            BadgeError::NoDownloads
+        })?;
 
     Ok(downloads)
 }
+
 async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, BadgeError> {
     let url = format!(
         "https://hub.docker.com/v2/repositories/{}/{}/",
@@ -179,21 +158,21 @@ async fn main() -> Result<(), BadgeError> {
     let registry = &args[1];
     let owner = &args[2];
     let repo = &args[3];
-    let package = &args[4];
+    let package = Some(&args[4] as &str);
 
-    println!("Fetching stats for: {} {}/{} {}", registry, owner, repo, package);
+    println!("Fetching stats for: {} {}/{} {:?}", registry, owner, repo, package);
 
     let downloads = match registry.as_str() {
         "github" => fetch_github_stats(owner, repo, package).await?,
         "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
-        "npm" => fetch_npm_stats(package).await?,
+        "npm" => fetch_npm_stats(package.unwrap()).await?,
         unknown => return Err(BadgeError::UnknownRegistry(unknown.to_string())),
     };
 
     println!("Downloads: {}", downloads);
 
     let badge_svg = generate_badge("downloads", &downloads.to_string(), "#007ec6");
-    let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package);
+    let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package.unwrap_or("unknown"));
     let mut file = File::create(&filename)?;
     file.write_all(badge_svg.as_bytes())?;
 
@@ -246,7 +225,7 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", "test-package").await;
+        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 42);
     }
@@ -270,7 +249,7 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", "test-package").await;
+        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
 
