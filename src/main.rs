@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 
-async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
+async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, Box<dyn Error>> {
     let github_token = env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN not set");
     let url = "https://api.github.com/graphql";
 
@@ -49,21 +49,25 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
     println!("Response body: {}", response_body);
 
     let data: Value = serde_json::from_str(&response_body)?;
-    
+
     if let Some(error) = data.get("errors") {
         println!("GraphQL Error: {:?}", error);
         return Ok(0);
     }
 
+    if data["data"]["user"]["packages"]["nodes"].as_array().map_or(true, |nodes| nodes.is_empty()) {
+        println!("No package found with name '{}' for user '{}'", package, owner);
+    }
+
     let downloads = data["data"]["user"]["packages"]["nodes"]
-        .get(0)
+        .as_array()
+        .and_then(|nodes| nodes.get(0))
         .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
         .unwrap_or_else(|| {
-            println!("Failed to parse downloads. Full JSON response: {:?}", data);
+            println!("No package data found or failed to parse downloads. Full JSON response: {}", data);
             0
         });
 
-    println!("Parsed downloads: {}", downloads);
     Ok(downloads)
 }
 
@@ -73,10 +77,22 @@ async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, Box<dyn E
         owner, repo
     );
 
+    println!("Fetching stats for DockerHub image: {}/{}", owner, repo);
+
     let client = reqwest::Client::new();
     let response = client.get(&url).send().await?;
+
+    println!("Response status: {}", response.status());
+
     let data: Value = response.json().await?;
-    Ok(data["pull_count"].as_u64().unwrap_or(0))
+    println!("Response body: {}", serde_json::to_string_pretty(&data)?);
+
+    let pull_count = data["pull_count"].as_u64().unwrap_or_else(|| {
+        println!("Failed to parse pull count. Full JSON response: {}", data);
+        0
+    });
+
+    Ok(pull_count)
 }
 
 async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
@@ -85,36 +101,47 @@ async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
         package
     );
 
+    println!("Fetching stats for NPM package: {}", package);
+
     let client = reqwest::Client::new();
     let response = client.get(&url).send().await?;
+
+    println!("Response status: {}", response.status());
+
     let data: Value = response.json().await?;
-    Ok(data["downloads"].as_u64().unwrap_or(0))
+    println!("Response body: {}", serde_json::to_string_pretty(&data)?);
+
+    let downloads = data["downloads"].as_u64().unwrap_or_else(|| {
+        println!("Failed to parse downloads. Full JSON response: {}", data);
+        0
+    });
+
+    Ok(downloads)
 }
 
 fn generate_badge(label: &str, message: &str, color: &str) -> String {
     format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-        <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"96\" height=\"20\" role=\"img\" aria-label=\"{label}: {message}\">\
-          <title>{label}: {message}</title>\
-          <linearGradient id=\"s\" x2=\"0\" y2=\"100%\">\
-            <stop offset=\"0\" stop-color=\"#bbb\" stop-opacity=\".1\"/>\
-            <stop offset=\"1\" stop-opacity=\".1\"/>\
-          </linearGradient>\
-          <clipPath id=\"r\">\
-            <rect width=\"96\" height=\"20\" rx=\"3\" fill=\"#fff\"/>\
-          </clipPath>\
-          <g clip-path=\"url(#r)\">\
-            <rect width=\"61\" height=\"20\" fill=\"#555\"/>\
-            <rect x=\"61\" width=\"35\" height=\"20\" fill=\"{color}\"/>\
-            <rect width=\"96\" height=\"20\" fill=\"url(#s)\"/>\
-          </g>\
-          <g fill=\"#fff\" text-anchor=\"middle\" font-family=\"Verdana,Geneva,DejaVu Sans,sans-serif\" text-rendering=\"geometricPrecision\" font-size=\"110\">\
-            <text aria-hidden=\"true\" x=\"315\" y=\"150\" fill=\"#010101\" fill-opacity=\".3\" transform=\"scale(.1)\" textLength=\"510\">{label}</text>\
-            <text x=\"315\" y=\"140\" transform=\"scale(.1)\" fill=\"#fff\" textLength=\"510\">{label}</text>\
-            <text aria-hidden=\"true\" x=\"775\" y=\"150\" fill=\"#010101\" fill-opacity=\".3\" transform=\"scale(.1)\" textLength=\"250\">{message}</text>\
-            <text x=\"775\" y=\"140\" transform=\"scale(.1)\" fill=\"#fff\" textLength=\"250\">{message}</text>\
-          </g>\
-        </svg>",
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{label}: {message}">
+  <title>{label}: {message}</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="96" height="20" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="61" height="20" fill="#555"/>
+    <rect x="61" width="35" height="20" fill="{color}"/>
+    <rect width="96" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{label}</text>
+    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{label}</text>
+    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{message}</text>
+    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{message}</text>
+  </g>
+</svg>"#,
         label = label,
         message = message,
         color = color
@@ -137,7 +164,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Fetching stats for: {} {}/{} {}", registry, owner, repo, package);
 
     let downloads = match registry.as_str() {
-        "github" => fetch_github_stats(owner, repo, package).await?,
+        "github" => fetch_github_stats(owner, package).await?,
         "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
         "npm" => fetch_npm_stats(package).await?,
         _ => {
