@@ -1,0 +1,33 @@
+name: Update Badges
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-badges:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+    
+    - name: Build
+      run: cargo build --release
+    
+    - name: Generate badges
+      env:
+        GITHUB_TOKEN: ${{ secrets.RUST_BADGE }}
+      run: |
+        ./target/release/multi-registry-badge-generator github janpreet docker-latex docker-latex
+    
+    - name: Commit and push if changed
+      run: |
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
+        git add -A
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update badges" && git push)
