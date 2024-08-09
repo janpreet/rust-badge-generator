@@ -25,13 +25,6 @@ jobs:
         command: build
         args: --release
     
-    - name: List directory contents
-      run: |
-        echo "Contents of target/release:"
-        ls -la target/release
-        echo "Executables in target/release:"
-        find target/release -type f -executable
-    
     - name: Generate badges
       env:
         GITHUB_TOKEN: ${{ secrets.RUST_BADGE }}

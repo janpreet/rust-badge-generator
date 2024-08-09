@@ -12,6 +12,8 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
         owner, package
     );
 
+    println!("Fetching stats from URL: {}", url);
+
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -21,8 +23,21 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
 
     let response = client.get(&url).headers(headers).send().await?;
-    let data: Value = response.json().await?;
-    Ok(data["downloads"].as_u64().unwrap_or(0))
+    
+    println!("Response status: {}", response.status());
+
+    let body = response.text().await?;
+    println!("Response body: {}", body);
+
+    let data: Value = serde_json::from_str(&body)?;
+    
+    if let Some(downloads) = data["downloads"].as_u64() {
+        println!("Parsed downloads: {}", downloads);
+        Ok(downloads)
+    } else {
+        println!("Failed to parse downloads. Full JSON response: {:?}", data);
+        Ok(0)
+    }
 }
 
 async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, Box<dyn Error>> {
