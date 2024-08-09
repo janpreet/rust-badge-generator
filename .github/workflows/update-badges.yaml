@@ -2,8 +2,8 @@ name: Update Badges
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   update-badges:
@@ -15,9 +15,16 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
+        override: true
     
     - name: Build
-      run: cargo build --release
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release
+    
+    - name: List directory contents
+      run: ls -R target/release
     
     - name: Generate badges
       env:
