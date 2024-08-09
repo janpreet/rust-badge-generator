@@ -187,27 +187,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_success() {
-        let _mock_server = mockito::Server::new();
-        std::env::set_var("GITHUB_TOKEN", "test_token");
-
-        let mock_response = r#"
-        {
-            "data": {
-                "user": {
-                    "packages": {
-                        "nodes": [
-                            {
-                                "name": "test-package",
-                                "statistics": {
-                                    "downloadsTotalCount": 42
-                                }
-                            }
-                        ]
-                    }
-                }
-            }
-        }"#;
-
         let _m = mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .match_body(Matcher::Json(json!({
@@ -226,9 +205,26 @@ mod tests {
             })))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(mock_response)
+            .with_body(r#"
+            {
+                "data": {
+                    "user": {
+                        "packages": {
+                            "nodes": [
+                                {
+                                    "name": "test-package",
+                                    "statistics": {
+                                        "downloadsTotalCount": 42
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }"#)
             .create();
 
+        std::env::set_var("GITHUB_TOKEN", "test_token");
         let result = fetch_github_stats("test_owner", "test-package").await;
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 42);
@@ -236,27 +232,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_downloads() {
-        let _mock_server = mockito::Server::new();
-        std::env::set_var("GITHUB_TOKEN", "test_token");
-
-        let mock_response = r#"
-        {
-            "data": {
-                "user": {
-                    "packages": {
-                        "nodes": []
-                    }
-                }
-            }
-        }"#;
-
         let _m = mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(mock_response)
+            .with_body(r#"
+            {
+                "data": {
+                    "user": {
+                        "packages": {
+                            "nodes": []
+                        }
+                    }
+                }
+            }"#)
             .create();
 
+        std::env::set_var("GITHUB_TOKEN", "test_token");
         let result = fetch_github_stats("test_owner", "test-package").await;
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
