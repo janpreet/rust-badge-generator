@@ -6,10 +6,10 @@ use std::fs::File;
 use std::io::Write;
 
 async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
-    let github_token = env::var("GITHUB_TOKEN")?;
+    let github_token = env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN not set");
     let url = "https://api.github.com/graphql";
 
-    println!("Fetching stats from GraphQL API");
+    println!("Fetching stats for GitHub package: {}/{}", owner, package);
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
@@ -22,6 +22,7 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
             user(login: "{}") {{
                 packages(first: 1, names: "{}") {{
                     nodes {{
+                        name
                         statistics {{
                             downloadsTotalCount
                         }}
@@ -49,9 +50,18 @@ async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u
 
     let data: Value = serde_json::from_str(&response_body)?;
     
-    let downloads = data["data"]["user"]["packages"]["nodes"][0]["statistics"]["downloadsTotalCount"]
-        .as_u64()
-        .unwrap_or(0);
+    if let Some(error) = data.get("errors") {
+        println!("GraphQL Error: {:?}", error);
+        return Ok(0);
+    }
+
+    let downloads = data["data"]["user"]["packages"]["nodes"]
+        .get(0)
+        .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
+        .unwrap_or_else(|| {
+            println!("Failed to parse downloads. Full JSON response: {:?}", data);
+            0
+        });
 
     println!("Parsed downloads: {}", downloads);
     Ok(downloads)
@@ -124,6 +134,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let repo = &args[3];
     let package = &args[4];
 
+    println!("Fetching stats for: {} {}/{} {}", registry, owner, repo, package);
+
     let downloads = match registry.as_str() {
         "github" => fetch_github_stats(owner, repo, package).await?,
         "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
@@ -134,11 +146,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    println!("Downloads: {}", downloads);
+
     let badge_svg = generate_badge("downloads", &downloads.to_string(), "#007ec6");
     let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package);
-    let mut file = File::create(filename)?;
+    let mut file = File::create(&filename)?;
     file.write_all(badge_svg.as_bytes())?;
 
-    println!("Badge generated successfully");
+    println!("Badge generated successfully: {}", filename);
     Ok(())
 }
