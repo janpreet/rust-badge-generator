@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 
-async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
+async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
     let github_token = env::var("GITHUB_TOKEN")?;
     let url = format!(
         "https://api.github.com/users/{}/packages/container/{}",
@@ -51,8 +51,9 @@ async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
 
 fn generate_badge(label: &str, message: &str, color: &str) -> String {
     format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{}: {}">
-  <title>{}: {}</title>
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{label}: {message}">
+  <title>{label}: {message}</title>
   <linearGradient id="s" x2="0" y2="100%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
     <stop offset="1" stop-opacity=".1"/>
@@ -62,17 +63,19 @@ fn generate_badge(label: &str, message: &str, color: &str) -> String {
   </clipPath>
   <g clip-path="url(#r)">
     <rect width="61" height="20" fill="#555"/>
-    <rect x="61" width="35" height="20" fill="{}"/>
+    <rect x="61" width="35" height="20" fill="{color}"/>
     <rect width="96" height="20" fill="url(#s)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{}</text>
-    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{}</text>
-    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{}</text>
-    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{}</text>
+    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{label}</text>
+    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{label}</text>
+    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{message}</text>
+    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{message}</text>
   </g>
 </svg>"#,
-        label, message, label, message, color, label, label, message, message
+        label = label,
+        message = message,
+        color = color
     )
 }
 
