@@ -7,13 +7,15 @@ use std::env;
 use std::fs::File;
 use std::io::Write;
 
+#[cfg(test)]
+use mockito;
+
 async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
-    let url = if cfg!(test) {
-        mockito::server_url() + "/graphql"
-    } else {
-        "https://api.github.com/graphql".to_string()
-    };
+    #[cfg(not(test))]
+    let url = "https://api.github.com/graphql".to_string();
+    #[cfg(test)]
+    let url = mockito::server_url() + "/graphql";
 
     println!("Fetching stats for GitHub package: {}/{}", owner, package);
 
