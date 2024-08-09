@@ -50,11 +50,11 @@ async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
 }
 
 fn generate_badge(label: &str, message: &str, color: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{label}: {message}">
-  <title>{label}: {message}</title>
-  <linearGradient id="s" x2="0" y2="100%">
+    let svg_start = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{}: {}">
+  <title>{}: {}</title>"#, label, message, label, message);
+
+    let svg_middle = format!(r#"  <linearGradient id="s" x2="0" y2="100%">
     <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
     <stop offset="1" stop-opacity=".1"/>
   </linearGradient>
@@ -63,20 +63,19 @@ fn generate_badge(label: &str, message: &str, color: &str) -> String {
   </clipPath>
   <g clip-path="url(#r)">
     <rect width="61" height="20" fill="#555"/>
-    <rect x="61" width="35" height="20" fill="{color}"/>
+    <rect x="61" width="35" height="20" fill="{}"/>
     <rect width="96" height="20" fill="url(#s)"/>
+  </g>"#, color);
+
+    let svg_end = format!(r#"  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{}</text>
+    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{}</text>
+    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{}</text>
+    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{}</text>
   </g>
-  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{label}</text>
-    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{label}</text>
-    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{message}</text>
-    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{message}</text>
-  </g>
-</svg>"#,
-        label = label,
-        message = message,
-        color = color
-    )
+</svg>"#, label, label, message, message);
+
+    format!("{}\n{}\n{}", svg_start, svg_middle, svg_end)
 }
 
 #[tokio::main]
