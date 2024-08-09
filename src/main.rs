@@ -9,15 +9,8 @@ use std::io::Write;
 
 async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
-    let url = if cfg!(feature = "test_mode") {
-        #[cfg(feature = "test_mode")]
-        {
-            mockito::server_url() + "/graphql"
-        }
-        #[cfg(not(feature = "test_mode"))]
-        {
-            "https://api.github.com/graphql".to_string()
-        }
+    let url = if cfg!(test) {
+        mockito::server_url() + "/graphql"
     } else {
         "https://api.github.com/graphql".to_string()
     };
@@ -193,8 +186,8 @@ mod tests {
     use mockito::{mock, Matcher};
 
     #[tokio::test]
-    #[cfg_attr(feature = "test_mode", mockito::attr(server))]
     async fn test_fetch_github_stats_success() {
+        let _mock_server = mockito::Server::new();
         std::env::set_var("GITHUB_TOKEN", "test_token");
 
         let mock_response = r#"
@@ -243,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_downloads() {
-        let mock_server = mockito::server_url();
+        let _mock_server = mockito::Server::new();
         std::env::set_var("GITHUB_TOKEN", "test_token");
 
         let mock_response = r#"
