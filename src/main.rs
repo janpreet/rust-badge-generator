@@ -10,14 +10,52 @@ use std::io::Write;
 #[cfg(test)]
 use mockito;
 
-async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u64, BadgeError> {
+async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
     #[cfg(not(test))]
     let url = "https://api.github.com/graphql".to_string();
     #[cfg(test)]
     let url = mockito::server_url() + "/graphql";
 
-    println!("Fetching stats for GitHub package: {}/{}/{}", owner, repo, package);
+    let package_query = if let Some(package_name) = package {
+        format!(
+            r#"packages(first: 1, names: "{}") {{
+                nodes {{
+                    name
+                    statistics {{
+                        downloadsTotalCount
+                    }}
+                }}
+            }}"#,
+            package_name
+        )
+    } else {
+        String::new()
+    };
+
+    let query = if !repo.is_empty() {
+        format!(
+            r#"{{ 
+                repository(owner: "{}", name: "{}") {{
+                    {}
+                }}
+            }}"#,
+            owner, repo, package_query
+        )
+    } else {
+        format!(
+            r#"{{ 
+                user(login: "{}") {{
+                    {}
+                }}
+            }}"#,
+            owner, package_query
+        )
+    };
+
+    let body = json!({
+        "query": query
+    });
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
@@ -25,26 +63,6 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u6
         .map_err(|e| BadgeError::InvalidHeader(e.to_string()))?);
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-    let query = format!(
-        r#"{{
-            repository(owner: "{}", name: "{}") {{
-                packages(first: 1, names: "{}") {{
-                    nodes {{
-                        name
-                        statistics {{
-                            downloadsTotalCount
-                        }}
-                    }}
-                }}
-            }}
-        }}"#,
-        owner, repo, package
-    );
-
-    let body = json!({
-        "query": query
-    });
 
     let response = client.post(&url)
         .headers(headers)
@@ -65,17 +83,20 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u6
     }
 
     let downloads = data["data"]["repository"]["packages"]["nodes"]
-        .as_array()
-        .and_then(|nodes| nodes.get(0))
+        .get(0)
         .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        .ok_or_else(|| {
-            println!("No download data found for package: {}/{}/{}", owner, repo, package);
-            BadgeError::NoDownloads
-        })?;
+        .or_else(|| {
+            data["data"]["user"]["packages"]["nodes"]
+                .get(0)
+                .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
+        })
+        .unwrap_or_else(|| {
+            println!("Failed to parse downloads. Full JSON response: {}", data);
+            0
+        });
 
     Ok(downloads)
 }
-
 async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, BadgeError> {
     let url = format!(
         "https://hub.docker.com/v2/repositories/{}/{}/",
