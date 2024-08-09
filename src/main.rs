@@ -5,39 +5,58 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT, CONTENT_TYPE};
+
 async fn fetch_github_stats(owner: &str, _repo: &str, package: &str) -> Result<u64, Box<dyn Error>> {
     let github_token = env::var("GITHUB_TOKEN")?;
-    let url = format!(
-        "https://api.github.com/users/{}/packages/container/{}",
-        owner, package
-    );
+    let url = "https://api.github.com/graphql";
 
-    println!("Fetching stats from URL: {}", url);
+    println!("Fetching stats from GraphQL API");
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
-    headers.insert(
-        "Authorization",
-        HeaderValue::from_str(&format!("token {}", github_token))?,
-    );
+    headers.insert(AUTHORIZATION, HeaderValue::from_str(&format!("Bearer {}", github_token))?);
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-    let response = client.get(&url).headers(headers).send().await?;
-    
+    let query = format!(
+        r#"{{
+            repository(owner: "{}", name: "{}") {{
+                packages(first: 1, names: "{}") {{
+                    nodes {{
+                        statistics {{
+                            downloadsTotalCount
+                        }}
+                    }}
+                }}
+            }}
+        }}"#,
+        owner, package, package
+    );
+
+    let body = json!({
+        "query": query
+    });
+
+    let response = client.post(url)
+        .headers(headers)
+        .json(&body)
+        .send()
+        .await?;
+
     println!("Response status: {}", response.status());
 
-    let body = response.text().await?;
-    println!("Response body: {}", body);
+    let response_body = response.text().await?;
+    println!("Response body: {}", response_body);
 
-    let data: Value = serde_json::from_str(&body)?;
+    let data: Value = serde_json::from_str(&response_body)?;
     
-    if let Some(downloads) = data["downloads"].as_u64() {
-        println!("Parsed downloads: {}", downloads);
-        Ok(downloads)
-    } else {
-        println!("Failed to parse downloads. Full JSON response: {:?}", data);
-        Ok(0)
-    }
+    let downloads = data["data"]["repository"]["packages"]["nodes"][0]["statistics"]["downloadsTotalCount"]
+        .as_u64()
+        .unwrap_or(0);
+
+    println!("Parsed downloads: {}", downloads);
+    Ok(downloads)
 }
 
 async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, Box<dyn Error>> {
