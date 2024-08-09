@@ -1,12 +1,14 @@
+mod error;
+
+use error::BadgeError;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT, CONTENT_TYPE};
 use serde_json::{json, Value};
 use std::env;
-use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 
-async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, Box<dyn Error>> {
-    let github_token = env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN not set");
+async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeError> {
+    let github_token = env::var("GITHUB_TOKEN")?;
     let url = "https://api.github.com/graphql";
 
     println!("Fetching stats for GitHub package: {}/{}", owner, package);
@@ -52,26 +54,24 @@ async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, Box<dyn E
 
     if let Some(error) = data.get("errors") {
         println!("GraphQL Error: {:?}", error);
-        return Ok(0);
+        return Err(BadgeError::NoDownloads);
     }
 
     if data["data"]["user"]["packages"]["nodes"].as_array().map_or(true, |nodes| nodes.is_empty()) {
         println!("No package found with name '{}' for user '{}'", package, owner);
+        return Err(BadgeError::NoDownloads);
     }
 
     let downloads = data["data"]["user"]["packages"]["nodes"]
         .as_array()
         .and_then(|nodes| nodes.get(0))
         .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        .unwrap_or_else(|| {
-            println!("No package data found or failed to parse downloads. Full JSON response: {}", data);
-            0
-        });
+        .ok_or(BadgeError::NoDownloads)?;
 
     Ok(downloads)
 }
 
-async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, Box<dyn Error>> {
+async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, BadgeError> {
     let url = format!(
         "https://hub.docker.com/v2/repositories/{}/{}/",
         owner, repo
@@ -87,15 +87,12 @@ async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, Box<dyn E
     let data: Value = response.json().await?;
     println!("Response body: {}", serde_json::to_string_pretty(&data)?);
 
-    let pull_count = data["pull_count"].as_u64().unwrap_or_else(|| {
-        println!("Failed to parse pull count. Full JSON response: {}", data);
-        0
-    });
+    let pull_count = data["pull_count"].as_u64().ok_or(BadgeError::NoDownloads)?;
 
     Ok(pull_count)
 }
 
-async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
+async fn fetch_npm_stats(package: &str) -> Result<u64, BadgeError> {
     let url = format!(
         "https://api.npmjs.org/downloads/point/last-month/{}",
         package
@@ -111,40 +108,34 @@ async fn fetch_npm_stats(package: &str) -> Result<u64, Box<dyn Error>> {
     let data: Value = response.json().await?;
     println!("Response body: {}", serde_json::to_string_pretty(&data)?);
 
-    let downloads = data["downloads"].as_u64().unwrap_or_else(|| {
-        println!("Failed to parse downloads. Full JSON response: {}", data);
-        0
-    });
+    let downloads = data["downloads"].as_u64().ok_or(BadgeError::NoDownloads)?;
 
     Ok(downloads)
 }
 
-
-
 fn generate_badge(label: &str, message: &str, color: &str) -> String {
     format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-        <svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"96\" height=\"20\" role=\"img\" aria-label=\"{label}: {message}\">\
-          <title>{label}: {message}</title>\
-          <linearGradient id=\"s\" x2=\"0\" y2=\"100%\">\
-            <stop offset=\"0\" stop-color=\"#bbb\" stop-opacity=\".1\"/>\
-            <stop offset=\"1\" stop-opacity=\".1\"/>\
-          </linearGradient>\
-          <clipPath id=\"r\">\
-            <rect width=\"96\" height=\"20\" rx=\"3\" fill=\"#fff\"/>\
-          </clipPath>\
-          <g clip-path=\"url(#r)\">\
-            <rect width=\"61\" height=\"20\" fill=\"#555\"/>\
-            <rect x=\"61\" width=\"35\" height=\"20\" fill=\"{color}\"/>\
-            <rect width=\"96\" height=\"20\" fill=\"url(#s)\"/>\
-          </g>\
-          <g fill=\"#fff\" text-anchor=\"middle\" font-family=\"Verdana,Geneva,DejaVu Sans,sans-serif\" text-rendering=\"geometricPrecision\" font-size=\"110\">\
-            <text aria-hidden=\"true\" x=\"315\" y=\"150\" fill=\"#010101\" fill-opacity=\".3\" transform=\"scale(.1)\" textLength=\"510\">{label}</text>\
-            <text x=\"315\" y=\"140\" transform=\"scale(.1)\" fill=\"#fff\" textLength=\"510\">{label}</text>\
-            <text aria-hidden=\"true\" x=\"775\" y=\"150\" fill=\"#010101\" fill-opacity=\".3\" transform=\"scale(.1)\" textLength=\"250\">{message}</text>\
-            <text x=\"775\" y=\"140\" transform=\"scale(.1)\" fill=\"#fff\" textLength=\"250\">{message}</text>\
-          </g>\
-        </svg>",
+        r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="20" role="img" aria-label="{label}: {message}">
+  <title>{label}: {message}</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="96" height="20" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="61" height="20" fill="#555"/>
+    <rect x="61" width="35" height="20" fill="{color}"/>
+    <rect width="96" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="315" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="510">{label}</text>
+    <text x="315" y="140" transform="scale(.1)" fill="#fff" textLength="510">{label}</text>
+    <text aria-hidden="true" x="775" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="250">{message}</text>
+    <text x="775" y="140" transform="scale(.1)" fill="#fff" textLength="250">{message}</text>
+  </g>
+</svg>"##,
         label = label,
         message = message,
         color = color
@@ -152,7 +143,7 @@ fn generate_badge(label: &str, message: &str, color: &str) -> String {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), BadgeError> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 5 {
         eprintln!("Usage: {} <registry> <owner> <repo> <package>", args[0]);
@@ -170,10 +161,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "github" => fetch_github_stats(owner, package).await?,
         "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
         "npm" => fetch_npm_stats(package).await?,
-        _ => {
-            eprintln!("Unsupported registry: {}", registry);
-            std::process::exit(1);
-        }
+        unknown => return Err(BadgeError::UnknownRegistry(unknown.to_string())),
     };
 
     println!("Downloads: {}", downloads);
@@ -185,4 +173,76 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Badge generated successfully: {}", filename);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::{mock, server_url};
+
+    #[tokio::test]
+    async fn test_fetch_github_stats_success() {
+        let mock_response = r#"
+        {
+            "data": {
+                "user": {
+                    "packages": {
+                        "nodes": [
+                            {
+                                "name": "test-package",
+                                "statistics": {
+                                    "downloadsTotalCount": 42
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }"#;
+
+        let _m = mock("POST", "/graphql")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response)
+            .create();
+
+        std::env::set_var("GITHUB_TOKEN", "test_token");
+
+        let result = fetch_github_stats("test_owner", "test-package").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_github_stats_no_downloads() {
+        let mock_response = r#"
+        {
+            "data": {
+                "user": {
+                    "packages": {
+                        "nodes": []
+                    }
+                }
+            }
+        }"#;
+
+        let _m = mock("POST", "/graphql")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(mock_response)
+            .create();
+
+        std::env::set_var("GITHUB_TOKEN", "test_token");
+
+        let result = fetch_github_stats("test_owner", "test-package").await;
+        assert!(matches!(result, Err(BadgeError::NoDownloads)));
+    }
+
+    #[test]
+    fn test_generate_badge() {
+        let badge = generate_badge("downloads", "42", "#007ec6");
+        assert!(badge.contains("downloads"));
+        assert!(badge.contains("42"));
+        assert!(badge.contains("#007ec6"));
+    }
 }

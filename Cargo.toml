@@ -1,8 +1,13 @@
 [package]
-     name = "rust-badge-generator"
-     version = "0.1.0"
-     edition = "2021"
+name = "rust-badge-generator"
+version = "0.1.0"
+edition = "2021"
+
 [dependencies]
-     reqwest = { version = "0.11", features = ["json"] }
-     tokio = { version = "1", features = ["full"] }
-     serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+mockito = "0.31"

@@ -19,6 +19,11 @@ jobs:
         toolchain: stable
         override: true
     
+    - name: Run tests
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+
     - name: Build
       uses: actions-rs/cargo@v1
       with:

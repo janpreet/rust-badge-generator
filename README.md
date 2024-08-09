@@ -1,3 +1,9 @@
+# Rust Badge Generator
+
+![GitHub Actions](https://github.com/janpreet/rust-badge-generator/workflows/Update%20Badges/badge.svg)
+![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)
+![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)
+
 # Rust Multi-Registry Package Badges
 
 This project generates static badges for package statistics from various registries, including GitHub Container Registry, Docker Hub, and NPM. It's written in Rust for performance and safety, and uses GitHub Actions to periodically update the badges and GitHub Pages to host them.
