@@ -11,3 +11,6 @@ thiserror = "1.0"
 
 [dev-dependencies]
 mockito = "0.31"
+
+[features]
+test_mode = []
