@@ -24,13 +24,19 @@ jobs:
         args: --release
     
     - name: List directory contents
-      run: ls -R target/release
+      run: |
+        echo "Contents of target/release:"
+        ls -la target/release
+        echo "Executables in target/release:"
+        find target/release -type f -executable
     
     - name: Generate badges
       env:
         GITHUB_TOKEN: ${{ secrets.RUST_BADGE }}
       run: |
-        ./target/release/multi-registry-badge-generator github janpreet docker-latex docker-latex
+        BINARY_NAME=$(find target/release -type f -executable | grep -v '\.d$' | head -n 1)
+        echo "Using binary: $BINARY_NAME"
+        $BINARY_NAME github janpreet docker-latex docker-latex
     
     - name: Commit and push if changed
       run: |
