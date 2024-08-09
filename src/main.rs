@@ -10,14 +10,14 @@ use std::io::Write;
 #[cfg(test)]
 use mockito;
 
-async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeError> {
+async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
     #[cfg(not(test))]
     let url = "https://api.github.com/graphql".to_string();
     #[cfg(test)]
     let url = mockito::server_url() + "/graphql";
 
-    println!("Fetching stats for GitHub package: {}/{}", owner, package);
+    println!("Fetching stats for GitHub package: {}/{}/{}", owner, repo, package);
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
@@ -28,7 +28,7 @@ async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeErro
 
     let query = format!(
         r#"{{
-            user(login: "{}") {{
+            repository(owner: "{}", name: "{}") {{
                 packages(first: 1, names: "{}") {{
                     nodes {{
                         name
@@ -39,14 +39,14 @@ async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeErro
                 }}
             }}
         }}"#,
-        owner, package
+        owner, repo, package
     );
 
     let body = json!({
         "query": query
     });
 
-    let response = client.post(url)
+    let response = client.post(&url)
         .headers(headers)
         .json(&body)
         .send()
@@ -64,16 +64,14 @@ async fn fetch_github_stats(owner: &str, package: &str) -> Result<u64, BadgeErro
         return Err(BadgeError::NoDownloads);
     }
 
-    if data["data"]["user"]["packages"]["nodes"].as_array().map_or(true, |nodes| nodes.is_empty()) {
-        println!("No package found with name '{}' for user '{}'", package, owner);
-        return Err(BadgeError::NoDownloads);
-    }
-
-    let downloads = data["data"]["user"]["packages"]["nodes"]
+    let downloads = data["data"]["repository"]["packages"]["nodes"]
         .as_array()
         .and_then(|nodes| nodes.get(0))
         .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        .ok_or(BadgeError::NoDownloads)?;
+        .ok_or_else(|| {
+            println!("No download data found for package: {}/{}/{}", owner, repo, package);
+            BadgeError::NoDownloads
+        })?;
 
     Ok(downloads)
 }
@@ -165,7 +163,7 @@ async fn main() -> Result<(), BadgeError> {
     println!("Fetching stats for: {} {}/{} {}", registry, owner, repo, package);
 
     let downloads = match registry.as_str() {
-        "github" => fetch_github_stats(owner, package).await?,
+        "github" => fetch_github_stats(owner, repo, package).await?,
         "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
         "npm" => fetch_npm_stats(package).await?,
         unknown => return Err(BadgeError::UnknownRegistry(unknown.to_string())),
