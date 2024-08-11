@@ -10,14 +10,14 @@ use std::io::Write;
 #[cfg(test)]
 use mockito;
 
-async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u64, BadgeError> {
+async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
     #[cfg(not(test))]
     let url = "https://api.github.com/graphql".to_string();
     #[cfg(test)]
     let url = mockito::server_url() + "/graphql";
 
-    println!("Fetching stats for GitHub package: {}/{}/{}", owner, repo, package);
+    println!("Fetching stats for GitHub package: {}/{}/{:?}", owner, repo, package);
 
     let client = reqwest::Client::new();
     let mut headers = HeaderMap::new();
@@ -26,21 +26,33 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u6
     headers.insert(USER_AGENT, HeaderValue::from_static("rust-reqwest"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-    let query = format!(
-        r#"{{
-            repository(owner: "{}", name: "{}") {{
-                packages(first: 1, names: "{}") {{
-                    nodes {{
-                        name
-                        statistics {{
-                            downloadsTotalCount
+    let query = match package {
+        Some(pkg) => format!(
+            r#"{{
+                repository(owner: "{}", name: "{}") {{
+                    packages(first: 1, names: "{}") {{
+                        nodes {{
+                            name
+                            statistics {{
+                                downloadsTotalCount
+                            }}
                         }}
                     }}
                 }}
-            }}
-        }}"#,
-        owner, repo, package
-    );
+            }}"#,
+            owner, repo, pkg
+        ),
+        None => format!(
+            r#"{{
+                repository(owner: "{}", name: "{}") {{
+                    releases(last: 1) {{
+                        totalCount
+                    }}
+                }}
+            }}"#,
+            owner, repo
+        ),
+    };
 
     let body = json!({
         "query": query
@@ -64,14 +76,16 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: &str) -> Result<u6
         return Err(BadgeError::NoDownloads);
     }
 
-    let downloads = data["data"]["repository"]["packages"]["nodes"]
-        .as_array()
-        .and_then(|nodes| nodes.get(0))
-        .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
-        .ok_or_else(|| {
-            println!("No download data found for package: {}/{}/{}", owner, repo, package);
-            BadgeError::NoDownloads
-        })?;
+    let downloads = match package {
+        Some(_) => data["data"]["repository"]["packages"]["nodes"]
+            .as_array()
+            .and_then(|nodes| nodes.get(0))
+            .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64()),
+        None => data["data"]["repository"]["releases"]["totalCount"].as_u64(),
+    }.ok_or_else(|| {
+        println!("No download data found for package: {}/{}/{:?}", owner, repo, package);
+        BadgeError::NoDownloads
+    })?;
 
     Ok(downloads)
 }
@@ -150,15 +164,15 @@ fn generate_badge(label: &str, message: &str, color: &str) -> String {
 #[tokio::main]
 async fn main() -> Result<(), BadgeError> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 5 {
-        eprintln!("Usage: {} <registry> <owner> <repo> <package>", args[0]);
+    if args.len() < 4 {
+        eprintln!("Usage: {} <registry> <owner> <repo> [package]", args[0]);
         std::process::exit(1);
     }
 
     let registry = &args[1];
     let owner = &args[2];
     let repo = &args[3];
-    let package = Some(&args[4] as &str);
+    let package = args.get(4).map(|s| s.as_str());
 
     println!("Fetching stats for: {} {}/{} {:?}", registry, owner, repo, package);
 
@@ -217,15 +231,7 @@ mod tests {
                                         "downloadsTotalCount": 42
                                     }
                                 }
-                            ]
-                        }
-                    }
-                }
-            }"#)
-            .create();
-
-        std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
+            ...
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 42);
     }
@@ -253,6 +259,29 @@ mod tests {
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
 
+    #[tokio::test]
+    async fn test_fetch_github_stats_no_package() {
+        let _m = mock("POST", "/graphql")
+            .match_header("authorization", "Bearer test_token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"
+            {
+                "data": {
+                    "repository": {
+                        "releases": {
+                            "totalCount": 10
+                        }
+                    }
+                }
+            }"#)
+            .create();
+
+        std::env::set_var("GITHUB_TOKEN", "test_token");
+        let result = fetch_github_stats("test_owner", "test_repo", None).await;
+        assert!(result.is_ok(), "Error: {:?}", result.err());
+        assert_eq!(result.unwrap(), 10);
+    }
     #[test]
     fn test_generate_badge() {
         let badge = generate_badge("downloads", "42", "#007ec6");
