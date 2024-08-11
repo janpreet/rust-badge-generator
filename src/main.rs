@@ -7,9 +7,6 @@ use std::env;
 use std::fs::File;
 use std::io::Write;
 
-#[cfg(test)]
-use mockito;
-
 async fn fetch_github_stats_with_url(owner: &str, repo: &str, package: Option<&str>, url: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
 
@@ -83,7 +80,7 @@ async fn fetch_github_stats_with_url(owner: &str, repo: &str, package: Option<&s
     let downloads = match package {
         Some(_) => data["data"]["repository"]["packages"]["nodes"]
             .as_array()
-            .and_then(|nodes| nodes.get(0))
+            .and_then(|nodes| nodes.first())
             .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64()),
         None => data["data"]["repository"]["releases"]["totalCount"].as_u64(),
     }.ok_or_else(|| {
