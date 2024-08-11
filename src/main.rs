@@ -8,14 +8,10 @@ use std::fs::File;
 use std::io::Write;
 
 #[cfg(test)]
-use mockito;
+use mockito::{mock, Matcher, Server};
 
-async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> Result<u64, BadgeError> {
+async fn fetch_github_stats_with_url(owner: &str, repo: &str, package: Option<&str>, url: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
-    #[cfg(not(test))]
-    let url = "https://api.github.com/graphql".to_string();
-    #[cfg(test)]
-    let url = mockito::server_url() + "/graphql";
 
     println!("Fetching stats for GitHub package: {}/{}/{:?}", owner, repo, package);
 
@@ -58,7 +54,7 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
         "query": query
     });
 
-    let response = client.post(&url)
+    let response = client.post(url)
         .headers(headers)
         .json(&body)
         .send()
@@ -96,6 +92,10 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
     })?;
 
     Ok(downloads)
+}
+
+async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> Result<u64, BadgeError> {
+    fetch_github_stats_with_url(owner, repo, package, "https://api.github.com/graphql").await
 }
 
 async fn fetch_dockerhub_stats(owner: &str, repo: &str) -> Result<u64, BadgeError> {
@@ -205,11 +205,11 @@ async fn main() -> Result<(), BadgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::{mock, Matcher};
 
     #[tokio::test]
     async fn test_fetch_github_stats_success() {
-        let _m = mock("POST", "/graphql")
+        let mock_server = Server::new();
+        let mock = mock_server.mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .match_body(Matcher::Json(json!({
                 "query": r#"{
@@ -244,18 +244,22 @@ mod tests {
                     }
                 }
             }"#)
-            .expect(1)
             .create();
-    
+
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
+        
+        let url = mock_server.url();
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &url).await;
+        
+        mock.assert();
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 42);
     }
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_downloads() {
-        let _m = mock("POST", "/graphql")
+        let mock_server = Server::new();
+        let mock = mock_server.mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -272,13 +276,15 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &mock_server.url()).await;
+        mock.assert();
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_package() {
-        let _m = mock("POST", "/graphql")
+        let mock_server = Server::new();
+        let mock = mock_server.mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -295,14 +301,16 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", None).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", None, &mock_server.url()).await;
+        mock.assert();
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 10);
     }
 
     #[tokio::test]
     async fn test_fetch_github_stats_empty_response() {
-        let _m = mock("POST", "/graphql")
+        let mock_server = Server::new();
+        let mock = mock_server.mock("POST", "/graphql")
             .match_header("authorization", "Bearer test_token")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -310,7 +318,8 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &mock_server.url()).await;
+        mock.assert();
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
 
