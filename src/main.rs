@@ -69,6 +69,10 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
     let response_body = response.text().await?;
     println!("Response body: {}", response_body);
 
+    if response_body.trim().is_empty() {
+        return Err(BadgeError::NoDownloads);
+    }
+
     let data: Value = serde_json::from_str(&response_body)?;
 
     if let Some(error) = data.get("errors") {
@@ -289,6 +293,20 @@ mod tests {
         let result = fetch_github_stats("test_owner", "test_repo", None).await;
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_github_stats_empty_response() {
+        let _m = mock("POST", "/graphql")
+            .match_header("authorization", "Bearer test_token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("")
+            .create();
+
+        std::env::set_var("GITHUB_TOKEN", "test_token");
+        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
+        assert!(matches!(result, Err(BadgeError::NoDownloads)));
     }
 
     #[test]
