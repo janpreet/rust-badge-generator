@@ -67,7 +67,7 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
     println!("Response status: {}", response.status());
 
     if !response.status().is_success() {
-        return Err(BadgeError::NetworkError(response.error_for_status().unwrap_err()));
+        return Err(BadgeError::NetworkError(format!("HTTP error: {}", response.status())));
     }
 
     let response_body = response.text().await?;
@@ -213,17 +213,17 @@ mod tests {
             .match_header("authorization", "Bearer test_token")
             .match_body(Matcher::Json(json!({
                 "query": r#"{
-            repository(owner: "test_owner", name: "test_repo") {
-                packages(first: 1, names: "test-package") {
-                    nodes {
-                        name
-                        statistics {
-                            downloadsTotalCount
+                    repository(owner: "test_owner", name: "test_repo") {
+                        packages(first: 1, names: "test-package") {
+                            nodes {
+                                name
+                                statistics {
+                                    downloadsTotalCount
+                                }
+                            }
                         }
                     }
-                }
-            }
-        }"#
+                }"#
             })))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -244,8 +244,9 @@ mod tests {
                     }
                 }
             }"#)
+            .expect(1)
             .create();
-
+    
         std::env::set_var("GITHUB_TOKEN", "test_token");
         let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
         assert!(result.is_ok(), "Error: {:?}", result.err());
