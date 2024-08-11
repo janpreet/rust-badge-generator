@@ -81,13 +81,14 @@ async fn fetch_github_stats_with_url(owner: &str, repo: &str, package: Option<&s
         Some(_) => data["data"]["repository"]["packages"]["nodes"]
             .as_array()
             .and_then(|nodes| nodes.first())
-            .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64()),
-        None => data["data"]["repository"]["releases"]["totalCount"].as_u64(),
-    }.ok_or_else(|| {
-        println!("No download data found for package: {}/{}/{:?}", owner, repo, package);
-        BadgeError::NoDownloads
-    })?;
+            .and_then(|node| node["statistics"]["downloadsTotalCount"].as_u64())
+            .unwrap_or(0),  // Return 0 if no package data is found
+        None => data["data"]["repository"]["releases"]["totalCount"]
+            .as_u64()
+            .unwrap_or(0),  // Return 0 if no release data is found
+    };
 
+    println!("Downloads: {}", downloads);
     Ok(downloads)
 }
 
@@ -182,23 +183,34 @@ async fn main() -> Result<(), BadgeError> {
     println!("Fetching stats for: {} {}/{} {:?}", registry, owner, repo, package);
 
     let downloads = match registry.as_str() {
-        "github" => fetch_github_stats(owner, repo, package).await?,
-        "dockerhub" => fetch_dockerhub_stats(owner, repo).await?,
-        "npm" => fetch_npm_stats(package.unwrap()).await?,
-        unknown => return Err(BadgeError::UnknownRegistry(unknown.to_string())),
+        "github" => fetch_github_stats(owner, repo, package).await,
+        "dockerhub" => fetch_dockerhub_stats(owner, repo).await,
+        "npm" => fetch_npm_stats(package.unwrap()).await,
+        unknown => Err(BadgeError::UnknownRegistry(unknown.to_string())),
     };
 
-    println!("Downloads: {}", downloads);
+    match downloads {
+        Ok(count) => {
+            println!("Downloads: {}", count);
+            let badge_svg = generate_badge("downloads", &count.to_string(), "#007ec6");
+            let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package.unwrap_or("unknown"));
+            let mut file = File::create(&filename)?;
+            file.write_all(badge_svg.as_bytes())?;
+            println!("Badge generated successfully: {}", filename);
+        },
+        Err(e) => {
+            eprintln!("Error fetching downloads: {:?}", e);
+            // Generate a badge with "N/A" for downloads
+            let badge_svg = generate_badge("downloads", "N/A", "#007ec6");
+            let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package.unwrap_or("unknown"));
+            let mut file = File::create(&filename)?;
+            file.write_all(badge_svg.as_bytes())?;
+            println!("Badge generated with N/A: {}", filename);
+        }
+    }
 
-    let badge_svg = generate_badge("downloads", &downloads.to_string(), "#007ec6");
-    let filename = format!("badges/{}-{}-{}-downloads.svg", owner, repo, package.unwrap_or("unknown"));
-    let mut file = File::create(&filename)?;
-    file.write_all(badge_svg.as_bytes())?;
-
-    println!("Badge generated successfully: {}", filename);
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
