@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Write;
 
 #[cfg(test)]
-use mockito::Server;
+use mockito;
 
 async fn fetch_github_stats_with_url(owner: &str, repo: &str, package: Option<&str>, url: &str) -> Result<u64, BadgeError> {
     let github_token = env::var("GITHUB_TOKEN")?;
@@ -205,12 +205,11 @@ async fn main() -> Result<(), BadgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::{Server, Matcher};
+    use mockito::Matcher;
 
     #[tokio::test]
     async fn test_fetch_github_stats_success() {
-        let mut server = Server::new();
-        let mock = server.mock("POST", "/graphql")
+        let mock = mockito::mock("POST", "/graphql")
             .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
             .match_body(Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string()))
             .with_status(200)
@@ -236,7 +235,7 @@ mod tests {
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
         
-        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &server.url()).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &mockito::server_url()).await;
         
         mock.assert();
         assert!(result.is_ok(), "Error: {:?}", result.err());
@@ -245,8 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_downloads() {
-        let mut server = Server::new();
-        let mock = server.mock("POST", "/graphql")
+        let mock = mockito::mock("POST", "/graphql")
             .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
             .match_body(Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string()))
             .with_status(200)
@@ -264,7 +262,7 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &server.url()).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &mockito::server_url()).await;
         
         mock.assert();
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
@@ -272,8 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_package() {
-        let mut server = Server::new();
-        let mock = server.mock("POST", "/graphql")
+        let mock = mockito::mock("POST", "/graphql")
             .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
             .match_body(Matcher::Regex(".*repository.*releases.*totalCount.*".to_string()))
             .with_status(200)
@@ -291,7 +288,7 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats_with_url("test_owner", "test_repo", None, &server.url()).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", None, &mockito::server_url()).await;
         
         mock.assert();
         assert!(result.is_ok(), "Error: {:?}", result.err());
@@ -300,8 +297,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_empty_response() {
-        let mut server = Server::new();
-        let mock = server.mock("POST", "/graphql")
+        let mock = mockito::mock("POST", "/graphql")
             .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
             .match_body(Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string()))
             .with_status(200)
@@ -310,7 +306,7 @@ mod tests {
             .create();
 
         std::env::set_var("GITHUB_TOKEN", "test_token");
-        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &server.url()).await;
+        let result = fetch_github_stats_with_url("test_owner", "test_repo", Some("test-package"), &mockito::server_url()).await;
         
         mock.assert();
         assert!(matches!(result, Err(BadgeError::NoDownloads)));
