@@ -66,6 +66,10 @@ async fn fetch_github_stats(owner: &str, repo: &str, package: Option<&str>) -> R
 
     println!("Response status: {}", response.status());
 
+    if !response.status().is_success() {
+        return Err(BadgeError::NetworkError(response.error_for_status().unwrap_err()));
+    }
+
     let response_body = response.text().await?;
     println!("Response body: {}", response_body);
 
