@@ -2,42 +2,65 @@ name: Update Badges
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours
-  workflow_dispatch:  # Allows manual triggering
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   update-badges:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v3
       with:
         token: ${{ secrets.RUST_BADGE }}
-    
+
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         override: true
-    
+        components: rustfmt, clippy
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
     - name: Run tests
       uses: actions-rs/cargo@v1
       with:
         command: test
+        args: -- --nocapture
 
-    - name: Build
+    - name: Run clippy
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: -- -D warnings
+
+    - name: Build release
       uses: actions-rs/cargo@v1
       with:
         command: build
         args: --release
-    
+
     - name: Generate badges
       env:
         GITHUB_TOKEN: ${{ secrets.RUST_BADGE }}
       run: |
         BINARY_NAME=$(find target/release -type f -executable | grep -v '\.d$' | head -n 1)
         echo "Using binary: $BINARY_NAME"
+        $BINARY_NAME github janpreet docker-latex
         $BINARY_NAME github janpreet docker-latex docker-latex
-    
+        $BINARY_NAME dockerhub janpreet docker-latex
+
     - name: Commit and push if changed
       run: |
         git config --global user.email "action@github.com"

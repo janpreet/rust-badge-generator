@@ -231,7 +231,15 @@ mod tests {
                                         "downloadsTotalCount": 42
                                     }
                                 }
-            ...
+                            ]
+                        }
+                    }
+                }
+            }"#)
+            .create();
+
+        std::env::set_var("GITHUB_TOKEN", "test_token");
+        let result = fetch_github_stats("test_owner", "test_repo", Some("test-package")).await;
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 42);
     }
@@ -282,6 +290,7 @@ mod tests {
         assert!(result.is_ok(), "Error: {:?}", result.err());
         assert_eq!(result.unwrap(), 10);
     }
+
     #[test]
     fn test_generate_badge() {
         let badge = generate_badge("downloads", "42", "#007ec6");
