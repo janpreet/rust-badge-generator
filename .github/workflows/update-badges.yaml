@@ -57,9 +57,7 @@ jobs:
       run: |
         BINARY_NAME=$(find target/release -type f -executable | grep -v '\.d$' | head -n 1)
         echo "Using binary: $BINARY_NAME"
-        $BINARY_NAME github janpreet docker-latex
         $BINARY_NAME github janpreet docker-latex docker-latex
-        $BINARY_NAME dockerhub janpreet docker-latex
 
     - name: Commit and push if changed
       run: |
