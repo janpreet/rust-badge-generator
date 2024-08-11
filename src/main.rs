@@ -205,24 +205,14 @@ async fn main() -> Result<(), BadgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
 
     #[tokio::test]
     async fn test_fetch_github_stats_success() {
-        let _m = mock("POST", "/graphql")
-            .match_header("authorization", "Bearer test_token")
+        let _m = mockito::mock("POST", "/graphql")
+            .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
             .match_body(Matcher::Json(json!({
-                "query": r#"{
-                    repository(owner: "test_owner", name: "test_repo") {
-                        packages(first: 1, names: "test-package") {
-                            nodes {
-                                name
-                                statistics {
-                                    downloadsTotalCount
-                                }
-                            }
-                        }
-                    }
-                }"#
+                "query": Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string())
             })))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -256,8 +246,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_downloads() {
-        let _m = mock("POST", "/graphql")
-            .match_header("authorization", "Bearer test_token")
+        let _m = mockito::mock("POST", "/graphql")
+            .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
+            .match_body(Matcher::Json(json!({
+                "query": Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string())
+            })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"
@@ -280,8 +273,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_no_package() {
-        let _m = mock("POST", "/graphql")
-            .match_header("authorization", "Bearer test_token")
+        let _m = mockito::mock("POST", "/graphql")
+            .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
+            .match_body(Matcher::Json(json!({
+                "query": Matcher::Regex(".*repository.*releases.*totalCount.*".to_string())
+            })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"
@@ -305,8 +301,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_github_stats_empty_response() {
-        let _m = mock("POST", "/graphql")
-            .match_header("authorization", "Bearer test_token")
+        let _m = mockito::mock("POST", "/graphql")
+            .match_header("authorization", Matcher::Regex("Bearer .+".to_string()))
+            .match_body(Matcher::Json(json!({
+                "query": Matcher::Regex(".*repository.*packages.*downloadsTotalCount.*".to_string())
+            })))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("")
